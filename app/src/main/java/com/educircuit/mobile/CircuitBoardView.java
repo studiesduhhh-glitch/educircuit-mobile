@@ -5,6 +5,8 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.PathMeasure;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.util.AttributeSet;
@@ -22,18 +24,21 @@ public final class CircuitBoardView extends View {
         void onBoardChanged();
     }
 
-    private static final int BACKGROUND = Color.rgb(246, 248, 252);
-    private static final int GRID = Color.rgb(226, 232, 240);
-    private static final int TEXT = Color.rgb(18, 28, 45);
-    private static final int MUTED = Color.rgb(101, 116, 139);
-    private static final int WIRE = Color.rgb(22, 93, 255);
-    private static final int ACTIVE = Color.rgb(21, 184, 129);
-    private static final int WARNING = Color.rgb(255, 77, 79);
-    private static final int AMBER = Color.rgb(255, 176, 32);
+    private static final int BACKGROUND = Color.rgb(245, 248, 251);
+    private static final int GRID = Color.rgb(224, 232, 238);
+    private static final int TEXT = Color.rgb(18, 24, 31);
+    private static final int MUTED = Color.rgb(103, 116, 132);
+    private static final int WIRE = Color.rgb(0, 145, 170);
+    private static final int ACTIVE = Color.rgb(9, 139, 119);
+    private static final int WARNING = Color.rgb(232, 87, 82);
+    private static final int AMBER = Color.rgb(235, 171, 48);
 
     private final List<CircuitComponent> components = new ArrayList<>();
     private final List<CircuitWire> wires = new ArrayList<>();
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path wirePath = new Path();
+    private final PathMeasure pathMeasure = new PathMeasure();
+    private final float[] pulsePoint = new float[2];
     private final RectF rect = new RectF();
     private final RectF scratch = new RectF();
     private final CircuitEngine engine = new CircuitEngine();
@@ -324,11 +329,11 @@ public final class CircuitBoardView extends View {
                 getWidth(),
                 getHeight(),
                 new int[] {
-                        Color.rgb(249, 252, 255),
-                        Color.rgb(239, 246, 255),
-                        BACKGROUND
+                        Color.WHITE,
+                        Color.rgb(246, 251, 249),
+                        Color.rgb(242, 247, 250)
                 },
-                new float[] { 0f, 0.46f, 1f },
+                new float[] { 0f, 0.58f, 1f },
                 Shader.TileMode.CLAMP
         );
         paint.setShader(gradient);
@@ -337,16 +342,19 @@ public final class CircuitBoardView extends View {
         paint.setShader(null);
 
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.argb(34, 21, 184, 129));
-        canvas.drawCircle(getWidth() * 0.86f, getHeight() * 0.18f, dp(140), paint);
-        paint.setColor(Color.argb(28, 255, 176, 32));
-        canvas.drawCircle(getWidth() * 0.12f, getHeight() * 0.82f, dp(120), paint);
+        paint.setColor(Color.argb(130, 255, 255, 255));
+        canvas.drawRect(0, 0, getWidth(), dp(74), paint);
+
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(dp(2));
+        paint.setColor(Color.argb(120, 220, 229, 236));
+        canvas.drawLine(dp(18), dp(74), getWidth() - dp(18), dp(74), paint);
     }
 
     private void drawGrid(Canvas canvas) {
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(1f);
-        paint.setColor(GRID);
+        paint.setColor(Color.argb(150, Color.red(GRID), Color.green(GRID), Color.blue(GRID)));
         float step = dp(32);
         for (float x = 0; x <= getWidth(); x += step) {
             canvas.drawLine(x, 0, x, getHeight(), paint);
@@ -371,9 +379,7 @@ public final class CircuitBoardView extends View {
     private void drawWires(Canvas canvas) {
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
-        paint.setStrokeWidth(dp(5));
         boolean animated = simulationResult != null && !simulationResult.overload && "Working Circuit".equals(simulationResult.status);
-        paint.setColor(animated ? ACTIVE : WIRE);
 
         for (CircuitWire wire : wires) {
             CircuitComponent from = findById(wire.fromId);
@@ -386,22 +392,50 @@ public final class CircuitBoardView extends View {
             float startY = portY(from, wire.fromPort);
             float endX = portX(to, wire.toPort);
             float endY = portY(to, wire.toPort);
-            canvas.drawLine(startX, startY, endX, endY, paint);
+            buildWirePath(startX, startY, endX, endY);
+
+            paint.setStrokeWidth(dp(8));
+            paint.setColor(Color.argb(42, 18, 24, 31));
+            canvas.drawPath(wirePath, paint);
+
+            paint.setStrokeWidth(dp(5));
+            paint.setColor(Color.WHITE);
+            canvas.drawPath(wirePath, paint);
+
+            paint.setStrokeWidth(dp(3));
+            paint.setColor(animated ? ACTIVE : WIRE);
+            canvas.drawPath(wirePath, paint);
+
             if (animated) {
-                drawWirePulse(canvas, startX, startY, endX, endY);
+                drawWirePulse(canvas);
             }
         }
     }
 
-    private void drawWirePulse(Canvas canvas, float startX, float startY, float endX, float endY) {
+    private void buildWirePath(float startX, float startY, float endX, float endY) {
+        wirePath.reset();
+        wirePath.moveTo(startX, startY);
+        float curve = Math.max(dp(46), Math.abs(endX - startX) * 0.42f);
+        float direction = endX >= startX ? 1f : -1f;
+        wirePath.cubicTo(
+                startX + curve * direction,
+                startY,
+                endX - curve * direction,
+                endY,
+                endX,
+                endY
+        );
+    }
+
+    private void drawWirePulse(Canvas canvas) {
         float position = (animationPhase % 1f + 1f) % 1f;
-        float x = startX + (endX - startX) * position;
-        float y = startY + (endY - startY) * position;
+        pathMeasure.setPath(wirePath, false);
+        pathMeasure.getPosTan(pathMeasure.getLength() * position, pulsePoint, null);
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.WHITE);
-        canvas.drawCircle(x, y, dp(5), paint);
+        canvas.drawCircle(pulsePoint[0], pulsePoint[1], dp(6), paint);
         paint.setColor(ACTIVE);
-        canvas.drawCircle(x, y, dp(3), paint);
+        canvas.drawCircle(pulsePoint[0], pulsePoint[1], dp(3), paint);
         paint.setStyle(Paint.Style.STROKE);
     }
 
@@ -431,43 +465,43 @@ public final class CircuitBoardView extends View {
         boolean selected = component.id.equals(selectedComponentId);
         if (activeOutput) {
             paint.setStyle(Paint.Style.FILL);
-            int glow = 45 + (int) (Math.abs(Math.sin(animationPhase * 4f)) * 45);
-            paint.setColor(Color.argb(glow, 21, 184, 129));
-            canvas.drawRoundRect(expanded(rect, dp(10)), dp(14), dp(14), paint);
+            int glow = 32 + (int) (Math.abs(Math.sin(animationPhase * 4f)) * 32);
+            paint.setColor(Color.argb(glow, 9, 139, 119));
+            canvas.drawRoundRect(expanded(rect, dp(8)), dp(8), dp(8), paint);
         }
 
         if (selected) {
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(Color.argb(45, 22, 93, 255));
-            canvas.drawRoundRect(expanded(rect, dp(8)), dp(13), dp(13), paint);
+            paint.setColor(Color.argb(44, 0, 145, 170));
+            canvas.drawRoundRect(expanded(rect, dp(7)), dp(8), dp(8), paint);
         }
 
-        paint.setShadowLayer(dp(9), 0, dp(5), Color.argb(30, 18, 28, 45));
+        paint.setShadowLayer(dp(8), 0, dp(4), Color.argb(28, 18, 24, 31));
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.WHITE);
-        canvas.drawRoundRect(rect, dp(10), dp(10), paint);
+        canvas.drawRoundRect(rect, dp(8), dp(8), paint);
         paint.clearShadowLayer();
 
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(selected ? dp(3) : dp(2));
         paint.setColor(selected ? WIRE : activeOutput ? ACTIVE : Color.rgb(212, 219, 230));
-        canvas.drawRoundRect(rect, dp(10), dp(10), paint);
+        canvas.drawRoundRect(rect, dp(8), dp(8), paint);
 
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(CircuitComponent.colorFor(component.type));
-        RectF colorBar = new RectF(rect.left, rect.top, rect.left + dp(8), rect.bottom);
-        canvas.drawRoundRect(colorBar, dp(8), dp(8), paint);
+        RectF colorBar = new RectF(rect.left, rect.top, rect.left + dp(7), rect.bottom);
+        canvas.drawRoundRect(colorBar, dp(7), dp(7), paint);
 
         paint.setColor(TEXT);
         paint.setTextSize(dp(15));
         paint.setFakeBoldText(true);
-        canvas.drawText(component.type, rect.left + dp(18), rect.top + dp(25), paint);
+        canvas.drawText(component.type, rect.left + dp(19), rect.top + dp(27), paint);
 
         paint.setFakeBoldText(false);
         paint.setTextSize(dp(11));
         paint.setColor(MUTED);
         String details = detailFor(component.type);
-        canvas.drawText(details, rect.left + dp(18), rect.top + dp(45), paint);
+        canvas.drawText(details, rect.left + dp(19), rect.top + dp(49), paint);
         drawComponentBadge(canvas, component);
 
         drawPort(canvas, component, CircuitComponent.PORT_NEGATIVE);
@@ -476,10 +510,12 @@ public final class CircuitBoardView extends View {
 
     private void drawComponentBadge(Canvas canvas, CircuitComponent component) {
         String badge = badgeFor(component.type);
-        float right = rect.right - dp(12);
-        float centerY = rect.top + dp(20);
+        float right = rect.right - dp(14);
+        float centerY = rect.top + dp(21);
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(Color.rgb(245, 247, 251));
+        scratch.set(right - dp(16), centerY - dp(12), right + dp(16), centerY + dp(12));
+        paint.setColor(Color.rgb(246, 249, 251));
+        canvas.drawRoundRect(scratch, dp(8), dp(8), paint);
         canvas.drawCircle(right, centerY, dp(12), paint);
         paint.setColor(CircuitComponent.colorFor(component.type));
         paint.setTextAlign(Paint.Align.CENTER);
@@ -500,8 +536,8 @@ public final class CircuitBoardView extends View {
         boolean positive = port == CircuitComponent.PORT_POSITIVE;
 
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(positive ? Color.rgb(255, 77, 79) : Color.rgb(40, 54, 74));
-        canvas.drawCircle(x, y, dp(10), paint);
+        paint.setColor(positive ? WARNING : Color.rgb(40, 48, 58));
+        canvas.drawCircle(x, y, dp(11), paint);
 
         paint.setColor(Color.WHITE);
         paint.setTextAlign(Paint.Align.CENTER);
@@ -522,15 +558,15 @@ public final class CircuitBoardView extends View {
         paint.setTextSize(dp(12));
         paint.setFakeBoldText(true);
         float textWidth = paint.measureText(status);
-        scratch.set(dp(14), dp(14), dp(14) + textWidth + padding * 2, dp(46));
+        scratch.set(dp(14), dp(14), dp(14) + textWidth + padding * 2 + dp(12), dp(48));
 
         paint.setStyle(Paint.Style.FILL);
-        paint.setColor(simulationResult.overload ? Color.rgb(255, 244, 244) : Color.rgb(239, 253, 246));
+        paint.setColor(simulationResult.overload ? Color.rgb(255, 240, 238) : Color.rgb(232, 249, 244));
         canvas.drawRoundRect(scratch, dp(8), dp(8), paint);
         paint.setColor(simulationResult.overload ? WARNING : ACTIVE);
         canvas.drawCircle(scratch.left + dp(12), scratch.centerY(), dp(4), paint);
         paint.setColor(TEXT);
-        canvas.drawText(status, scratch.left + dp(22), scratch.top + dp(21), paint);
+        canvas.drawText(status, scratch.left + dp(24), scratch.top + dp(22), paint);
         paint.setFakeBoldText(false);
     }
 
@@ -808,11 +844,14 @@ public final class CircuitBoardView extends View {
     }
 
     private float componentWidth() {
-        return dp(126);
+        if (getWidth() <= 0) {
+            return dp(132);
+        }
+        return Math.min(dp(136), Math.max(dp(112), getWidth() - dp(54)));
     }
 
     private float componentHeight() {
-        return dp(64);
+        return dp(70);
     }
 
     private float clamp(float value, float min, float max) {

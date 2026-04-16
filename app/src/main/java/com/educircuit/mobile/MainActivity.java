@@ -5,19 +5,19 @@ import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.graphics.Color;
-import android.graphics.drawable.Drawable;
+import android.graphics.Insets;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
-import android.graphics.Insets;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
-import android.widget.Button;
 import android.widget.EditText;
-import android.widget.HorizontalScrollView;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
@@ -29,20 +29,23 @@ import org.json.JSONException;
 import java.util.Locale;
 
 public final class MainActivity extends Activity {
-    private static final int BG = Color.rgb(246, 248, 252);
+    private static final int BG = Color.rgb(244, 247, 250);
     private static final int SURFACE = Color.WHITE;
-    private static final int PRIMARY = Color.rgb(22, 93, 255);
-    private static final int PRIMARY_DARK = Color.rgb(18, 67, 173);
-    private static final int TEXT = Color.rgb(18, 28, 45);
-    private static final int MUTED = Color.rgb(101, 116, 139);
-    private static final int LINE = Color.rgb(221, 228, 238);
-    private static final int GREEN = Color.rgb(21, 184, 129);
-    private static final int RED = Color.rgb(255, 77, 79);
-    private static final int AMBER = Color.rgb(255, 176, 32);
-    private static final int CYAN = Color.rgb(0, 150, 199);
-    private static final int SOFT_BLUE = Color.rgb(233, 239, 252);
-    private static final int SOFT_GREEN = Color.rgb(232, 249, 241);
-    private static final int SOFT_AMBER = Color.rgb(255, 247, 231);
+    private static final int INK = Color.rgb(18, 24, 31);
+    private static final int GRAPHITE = Color.rgb(29, 35, 43);
+    private static final int GRAPHITE_2 = Color.rgb(44, 51, 61);
+    private static final int MUTED = Color.rgb(103, 116, 132);
+    private static final int LINE = Color.rgb(222, 230, 239);
+    private static final int PRIMARY = Color.rgb(9, 139, 119);
+    private static final int PRIMARY_DARK = Color.rgb(6, 93, 82);
+    private static final int CORAL = Color.rgb(232, 87, 82);
+    private static final int GOLD = Color.rgb(235, 171, 48);
+    private static final int CYAN = Color.rgb(0, 145, 170);
+    private static final int SOFT_TEAL = Color.rgb(226, 247, 242);
+    private static final int SOFT_CORAL = Color.rgb(255, 238, 236);
+    private static final int SOFT_GOLD = Color.rgb(255, 248, 229);
+    private static final int SOFT_CYAN = Color.rgb(229, 248, 251);
+    private static final int SOFT_GRAPHITE = Color.rgb(239, 242, 246);
 
     private final CircuitEngine engine = new CircuitEngine();
     private final AiTeacher aiTeacher = new AiTeacher();
@@ -50,13 +53,17 @@ public final class MainActivity extends Activity {
 
     private ProjectStore projectStore;
     private CircuitBoardView boardView;
-    private LinearLayout panelContent;
-    private String activePanel = "student";
+    private FrameLayout pageHost;
+    private LinearLayout navBar;
+    private String activePage = "studio";
     private String projectName = "Smart Circuit Lab";
     private String teacherGrade = "";
     private String teacherFeedback = "";
     private CircuitEngine.SimulationResult latestResult;
 
+    private TextView headerStatusValue;
+    private TextView headerScoreValue;
+    private TextView headerProjectValue;
     private TextView statusValue;
     private TextView scoreValue;
     private TextView gradeValue;
@@ -78,13 +85,6 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         projectStore = new ProjectStore(this);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(BG);
-        applySystemBarInsets(root);
-
-        root.addView(buildHeader());
-
         boardView = new CircuitBoardView(this);
         boardView.setOnBoardChangedListener(new CircuitBoardView.OnBoardChangedListener() {
             @Override
@@ -93,28 +93,29 @@ public final class MainActivity extends Activity {
                 refreshStats();
             }
         });
-        root.addView(boardView, new LinearLayout.LayoutParams(
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(BG);
+        applySystemBarInsets(root);
+
+        root.addView(buildHeader());
+
+        pageHost = new FrameLayout(this);
+        pageHost.setBackgroundColor(BG);
+        root.addView(pageHost, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1f
         ));
 
-        ScrollView panelScroll = new ScrollView(this);
-        panelScroll.setFillViewport(false);
-        panelScroll.setBackgroundColor(BG);
-        panelContent = new LinearLayout(this);
-        panelContent.setOrientation(LinearLayout.VERTICAL);
-        panelContent.setPadding(dp(14), dp(12), dp(14), dp(16));
-        panelScroll.addView(panelContent);
-        root.addView(panelScroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(340)
-        ));
+        navBar = buildNavBar();
+        root.addView(navBar);
 
         setContentView(root);
         latestResult = engine.simulate(boardView.snapshot());
         boardView.setSimulationResult(latestResult);
-        renderPanel("student");
+        renderPage("studio");
     }
 
     private void applySystemBarInsets(final View root) {
@@ -131,13 +132,7 @@ public final class MainActivity extends Activity {
                     topInset = legacyTopInset(insets);
                     bottomInset = legacyBottomInset(insets);
                 }
-
-                view.setPadding(
-                        0,
-                        topInset,
-                        0,
-                        bottomInset
-                );
+                view.setPadding(0, topInset, 0, bottomInset);
                 return insets;
             }
         });
@@ -156,60 +151,123 @@ public final class MainActivity extends Activity {
     private View buildHeader() {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(dp(14), dp(10), dp(14), dp(8));
-        header.setBackground(premiumPanelBackground());
-        header.setElevation(dp(4));
+        header.setPadding(dp(16), dp(12), dp(16), dp(12));
+        header.setBackground(headerBackground());
+        header.setElevation(dp(8));
 
         LinearLayout titleRow = new LinearLayout(this);
         titleRow.setOrientation(LinearLayout.HORIZONTAL);
         titleRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        LinearLayout titleStack = new LinearLayout(this);
-        titleStack.setOrientation(LinearLayout.VERTICAL);
-        titleStack.addView(text("EduCircuit Mobile", 25, TEXT, true));
-        titleStack.addView(text("Build, simulate, debug, and grade circuits.", 13, MUTED, false));
-        titleRow.addView(titleStack, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.addView(text("EduCircuit Studio", 24, Color.WHITE, true));
+        TextView subtitle = text("Build clean. Test fast. Present with confidence.", 13, Color.rgb(216, 226, 235), false);
+        subtitle.setSingleLine(true);
+        subtitle.setEllipsize(TextUtils.TruncateAt.END);
+        copy.addView(subtitle);
+        titleRow.addView(copy, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView livePill = pill("Live Lab", GREEN, Color.WHITE);
-        titleRow.addView(livePill);
+        titleRow.addView(pill("Demo Ready", PRIMARY, Color.WHITE));
         header.addView(titleRow);
 
-        LinearLayout metricRow = new LinearLayout(this);
-        metricRow.setOrientation(LinearLayout.HORIZONTAL);
-        metricRow.setPadding(0, dp(10), 0, 0);
-        metricRow.addView(metricChip("Mode", "Student", SOFT_BLUE, PRIMARY));
-        metricRow.addView(metricChip("Coach", "Ready", SOFT_GREEN, GREEN));
-        metricRow.addView(metricChip("Storage", "Device", SOFT_AMBER, AMBER));
-        header.addView(metricRow);
+        LinearLayout metrics = new LinearLayout(this);
+        metrics.setOrientation(LinearLayout.HORIZONTAL);
+        metrics.setPadding(0, dp(12), 0, 0);
+        headerProjectValue = headerMetric(metrics, "Project", projectName, 1.4f);
+        headerStatusValue = headerMetric(metrics, "Status", "Ready", 1f);
+        headerScoreValue = headerMetric(metrics, "Score", "--", 0.8f);
+        header.addView(metrics);
+        return header;
+    }
 
-        HorizontalScrollView scroller = new HorizontalScrollView(this);
-        scroller.setHorizontalScrollBarEnabled(false);
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(12), 0, 0);
-        scroller.addView(row);
+    private LinearLayout buildNavBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER);
+        bar.setPadding(dp(10), dp(8), dp(10), dp(8));
+        bar.setBackground(navBackground());
+        bar.setElevation(dp(10));
+        return bar;
+    }
 
-        row.addView(button("Run Lab", PRIMARY, Color.WHITE, new View.OnClickListener() {
+    private void renderPage(String page) {
+        activePage = page;
+        clearPageRefs();
+        pageHost.removeAllViews();
+
+        if ("build".equals(page)) {
+            renderBuildPage();
+        } else if ("review".equals(page)) {
+            renderReviewPage();
+        } else if ("coach".equals(page)) {
+            renderCoachPage();
+        } else {
+            renderStudioPage();
+        }
+
+        updateNavBar();
+        refreshStats();
+    }
+
+    private void renderStudioPage() {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(14), dp(14), dp(14), dp(10));
+
+        LinearLayout mission = card();
+        mission.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout missionTop = new LinearLayout(this);
+        missionTop.setOrientation(LinearLayout.HORIZONTAL);
+        missionTop.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout missionCopy = new LinearLayout(this);
+        missionCopy.setOrientation(LinearLayout.VERTICAL);
+        missionCopy.addView(label("Current Mission"));
+        challengeValue = text("", 15, INK, true);
+        challengeValue.setLineSpacing(dp(2), 1f);
+        missionCopy.addView(challengeValue);
+        missionTop.addView(missionCopy, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        missionTop.addView(action("Run Lab", PRIMARY, Color.WHITE, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 runLab();
             }
         }));
-        row.addView(button("Auto Wire", GREEN, Color.WHITE, new View.OnClickListener() {
+        mission.addView(missionTop);
+        page.addView(mission);
+
+        FrameLayout boardShell = new FrameLayout(this);
+        boardShell.setPadding(dp(1), dp(1), dp(1), dp(1));
+        boardShell.setBackground(boardShellBackground());
+        boardShell.setElevation(dp(3));
+        attachBoard(boardShell);
+        LinearLayout.LayoutParams boardParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+        );
+        boardParams.setMargins(0, 0, 0, dp(12));
+        page.addView(boardShell, boardParams);
+
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        controls.setGravity(Gravity.CENTER);
+        controls.addView(weightedAction("Auto Wire", SOFT_TEAL, PRIMARY, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 boardView.autoWire();
                 runLab();
             }
         }));
-        row.addView(button("Starter", CYAN, Color.WHITE, new View.OnClickListener() {
+        controls.addView(weightedAction("Build Parts", SOFT_CYAN, CYAN, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                boardView.seedStarterLab();
-                runLab();
+                renderPage("build");
             }
         }));
-        row.addView(button("Clear", RED, Color.WHITE, new View.OnClickListener() {
+        controls.addView(weightedAction("Clear", SOFT_CORAL, CORAL, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 boardView.clearBoard();
@@ -218,115 +276,74 @@ public final class MainActivity extends Activity {
                 toast("Board cleared");
             }
         }));
-        row.addView(button("Save", AMBER, TEXT, new View.OnClickListener() {
+        page.addView(controls);
+
+        pageHost.addView(page);
+    }
+
+    private void renderBuildPage() {
+        ScrollView scroll = pageScroll();
+        LinearLayout content = pageContent(scroll);
+        content.addView(pageHeading("Build Room", "Templates, components, wiring, and power are kept here."));
+
+        LinearLayout templates = card();
+        templates.addView(sectionTitle("Templates"));
+        templates.addView(tileRow(
+                templateTile("LED Loop", "Safe starter circuit", "led", SOFT_TEAL, PRIMARY),
+                templateTile("Door Alarm", "Switch and buzzer", "alarm", SOFT_GOLD, Color.rgb(151, 105, 23))
+        ));
+        templates.addView(tileRow(
+                templateTile("Mini Fan", "Switch and motor", "fan", SOFT_CYAN, CYAN),
+                templateTile("Plant Build", "Sensor and pump", "plant", SOFT_CORAL, CORAL)
+        ));
+        content.addView(templates);
+
+        LinearLayout project = card();
+        project.addView(sectionTitle("Project"));
+        projectNameInput = input(projectName, "Project name");
+        project.addView(projectNameInput);
+        LinearLayout projectActions = actionRow();
+        projectActions.addView(weightedAction("Rename", PRIMARY, Color.WHITE, new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                renameProject();
+            }
+        }));
+        projectActions.addView(weightedAction("Save", SOFT_GOLD, Color.rgb(151, 105, 23), new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 saveProject();
             }
         }));
-        row.addView(button("Load", SOFT_BLUE, PRIMARY, new View.OnClickListener() {
+        projectActions.addView(weightedAction("Load", SOFT_GRAPHITE, GRAPHITE, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 loadProject();
             }
         }));
-        row.addView(button("Student", SOFT_BLUE, PRIMARY, new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                renderPanel("student");
-            }
-        }));
-        row.addView(button("Teacher", SOFT_BLUE, PRIMARY, new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                renderPanel("teacher");
-            }
-        }));
-        row.addView(button("AI Coach", SOFT_BLUE, PRIMARY, new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                renderPanel("ai");
-            }
-        }));
+        project.addView(projectActions);
+        content.addView(project);
 
-        header.addView(scroller);
-        return header;
-    }
-
-    private void renderPanel(String panel) {
-        activePanel = panel;
-        clearPanelRefs();
-        panelContent.removeAllViews();
-
-        if ("teacher".equals(panel)) {
-            renderTeacherPanel();
-        } else if ("ai".equals(panel)) {
-            renderAiPanel();
-        } else {
-            renderStudentPanel();
+        LinearLayout palette = card();
+        palette.addView(sectionTitle("Component Bay"));
+        palette.addView(text("Add one part at a time, then open Studio to place and wire it.", 13, MUTED, false));
+        String[] catalog = CircuitComponent.catalog();
+        for (int index = 0; index < catalog.length; index += 2) {
+            LinearLayout row = tileRow(
+                    componentTile(catalog[index]),
+                    index + 1 < catalog.length ? componentTile(catalog[index + 1]) : spacer()
+            );
+            palette.addView(row);
         }
-
-        refreshStats();
-    }
-
-    private void renderStudentPanel() {
-        panelContent.addView(sectionTitle("Student Lab"));
-        panelContent.addView(buildPanelTabs());
-
-        LinearLayout challenge = card();
-        LinearLayout challengeTop = row();
-        LinearLayout challengeCopy = new LinearLayout(this);
-        challengeCopy.setOrientation(LinearLayout.VERTICAL);
-        challengeCopy.addView(label("Challenge"));
-        challengeValue = text("", 14, TEXT, true);
-        challengeCopy.addView(challengeValue);
-        challengeTop.addView(challengeCopy, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        challengeTop.addView(button("Plant Build", SOFT_GREEN, GREEN, new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                applyTemplate("plant", "Smart Plant");
-            }
-        }));
-        challenge.addView(challengeTop);
-        LinearLayout templateRow = row();
-        templateRow.addView(button("LED Loop", SOFT_BLUE, PRIMARY, new TemplateClick("led", "LED Loop")));
-        templateRow.addView(button("Door Alarm", SOFT_AMBER, Color.rgb(164, 94, 0), new TemplateClick("alarm", "Door Alarm")));
-        templateRow.addView(button("Mini Fan", Color.rgb(231, 248, 252), CYAN, new TemplateClick("fan", "Mini Fan")));
-        challenge.addView(templateRow);
-        panelContent.addView(challenge);
-
-        LinearLayout nameCard = card();
-        nameCard.addView(label("Project name"));
-        projectNameInput = input(projectName, "Project name");
-        nameCard.addView(projectNameInput);
-        nameCard.addView(button("Rename Project", PRIMARY, Color.WHITE, new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                projectName = projectNameInput.getText().toString().trim();
-                if (projectName.length() == 0) {
-                    projectName = "Untitled Circuit";
-                    projectNameInput.setText(projectName);
-                }
-                toast("Project renamed");
-            }
-        }));
-        panelContent.addView(nameCard);
-
-        LinearLayout stats = card();
-        statusValue = stat(stats, "Status", "");
-        scoreValue = stat(stats, "Auto score", "");
-        gradeValue = stat(stats, "Grade", "");
-        outputsValue = stat(stats, "Outputs", "");
-        countsValue = stat(stats, "Parts", "");
-        panelContent.addView(stats);
+        content.addView(palette);
 
         LinearLayout inspector = card();
-        inspector.addView(label("Inspector"));
-        selectedValue = text("", 14, TEXT, false);
-        selectedValue.setLineSpacing(dp(2), 1.0f);
+        inspector.addView(sectionTitle("Inspector"));
+        selectedValue = text("", 14, INK, false);
+        selectedValue.setLineSpacing(dp(3), 1f);
         inspector.addView(selectedValue);
-        LinearLayout inspectorActions = row();
-        inspectorActions.addView(button("Duplicate", SOFT_BLUE, PRIMARY, new View.OnClickListener() {
+        LinearLayout inspectorActions = actionRow();
+        inspectorActions.addView(weightedAction("Duplicate", SOFT_TEAL, PRIMARY, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 if (boardView.duplicateSelectedComponent()) {
@@ -337,7 +354,7 @@ public final class MainActivity extends Activity {
                 refreshStats();
             }
         }));
-        inspectorActions.addView(button("Delete", Color.rgb(255, 238, 238), RED, new View.OnClickListener() {
+        inspectorActions.addView(weightedAction("Delete", SOFT_CORAL, CORAL, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 if (boardView.removeSelectedComponent()) {
@@ -349,18 +366,11 @@ public final class MainActivity extends Activity {
             }
         }));
         inspector.addView(inspectorActions);
-        panelContent.addView(inspector);
-
-        LinearLayout coach = card();
-        coach.addView(label("Circuit Coach"));
-        coachValue = text("", 14, TEXT, false);
-        coachValue.setLineSpacing(dp(2), 1.0f);
-        coach.addView(coachValue);
-        panelContent.addView(coach);
+        content.addView(inspector);
 
         LinearLayout voltage = card();
-        voltage.addView(label("Battery voltage"));
-        voltageValue = text("", 14, MUTED, false);
+        voltage.addView(sectionTitle("Battery Voltage"));
+        voltageValue = text("", 18, PRIMARY_DARK, true);
         voltage.addView(voltageValue);
         SeekBar seekBar = new SeekBar(this);
         seekBar.setMax(60);
@@ -370,6 +380,7 @@ public final class MainActivity extends Activity {
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (fromUser) {
                     boardView.setBatteryVoltage(progress / 2.0f);
+                    refreshStats();
                 }
             }
 
@@ -383,52 +394,54 @@ public final class MainActivity extends Activity {
             }
         });
         voltage.addView(seekBar);
-        panelContent.addView(voltage);
+        content.addView(voltage);
 
-        LinearLayout palette = card();
-        LinearLayout paletteHead = row();
-        paletteHead.addView(label("Add components"), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        paletteHead.addView(button("Auto Wire", SOFT_GREEN, GREEN, new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                boardView.autoWire();
-                runLab();
-            }
-        }));
-        palette.addView(paletteHead);
-        String[] catalog = CircuitComponent.catalog();
-        for (int index = 0; index < catalog.length; index += 2) {
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            palette.addView(row);
-            addPaletteButton(row, catalog[index]);
-            if (index + 1 < catalog.length) {
-                addPaletteButton(row, catalog[index + 1]);
-            }
-        }
-        panelContent.addView(palette);
+        pageHost.addView(scroll);
     }
 
-    private void renderTeacherPanel() {
-        panelContent.addView(sectionTitle("Teacher Panel"));
-        panelContent.addView(buildPanelTabs());
+    private void renderReviewPage() {
+        ScrollView scroll = pageScroll();
+        LinearLayout content = pageContent(scroll);
+        content.addView(pageHeading("Review Deck", "Score, feedback, and a clean handoff for presentation."));
 
-        LinearLayout review = card();
-        teacherMetricsValue = text("", 14, TEXT, false);
-        teacherMetricsValue.setLineSpacing(dp(2), 1.0f);
-        review.addView(teacherMetricsValue);
-        panelContent.addView(review);
+        LinearLayout stats = card();
+        stats.addView(sectionTitle("Snapshot"));
+        LinearLayout rowOne = tileRow(
+                statTile("Status", "", PRIMARY),
+                statTile("Score", "", GOLD)
+        );
+        statusValue = (TextView) rowOne.getChildAt(0).findViewWithTag("value");
+        scoreValue = (TextView) rowOne.getChildAt(1).findViewWithTag("value");
+        stats.addView(rowOne);
+        LinearLayout rowTwo = tileRow(
+                statTile("Grade", "", CORAL),
+                statTile("Parts", "", CYAN)
+        );
+        gradeValue = (TextView) rowTwo.getChildAt(0).findViewWithTag("value");
+        countsValue = (TextView) rowTwo.getChildAt(1).findViewWithTag("value");
+        stats.addView(rowTwo);
+        outputsValue = text("", 14, INK, false);
+        outputsValue.setPadding(0, dp(10), 0, 0);
+        stats.addView(outputsValue);
+        content.addView(stats);
 
-        LinearLayout gradeCard = card();
-        gradeCard.addView(label("Grade"));
+        LinearLayout coach = card();
+        coach.addView(sectionTitle("Circuit Coach"));
+        coachValue = text("", 14, INK, false);
+        coachValue.setLineSpacing(dp(3), 1f);
+        coach.addView(coachValue);
+        content.addView(coach);
+
+        LinearLayout teacher = card();
+        teacher.addView(sectionTitle("Teacher Notes"));
         teacherGradeInput = input(teacherGrade, "A+, 95, Excellent");
-        gradeCard.addView(teacherGradeInput);
-        gradeCard.addView(label("Feedback"));
+        teacher.addView(teacherGradeInput);
         teacherFeedbackInput = input(teacherFeedback, "Write feedback for the student's circuit");
-        teacherFeedbackInput.setMinLines(3);
+        teacherFeedbackInput.setMinLines(4);
         teacherFeedbackInput.setGravity(Gravity.TOP);
-        gradeCard.addView(teacherFeedbackInput);
-        gradeCard.addView(button("Apply Teacher Feedback", PRIMARY, Color.WHITE, new View.OnClickListener() {
+        teacher.addView(teacherFeedbackInput);
+        LinearLayout teacherActions = actionRow();
+        teacherActions.addView(weightedAction("Apply", PRIMARY, Color.WHITE, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 teacherGrade = teacherGradeInput.getText().toString().trim();
@@ -437,83 +450,145 @@ public final class MainActivity extends Activity {
                 refreshStats();
             }
         }));
-        gradeCard.addView(button("Copy Project Summary", SOFT_BLUE, PRIMARY, new View.OnClickListener() {
+        teacherActions.addView(weightedAction("Copy Summary", SOFT_GRAPHITE, GRAPHITE, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 copySummary();
             }
         }));
-        panelContent.addView(gradeCard);
+        teacher.addView(teacherActions);
+        content.addView(teacher);
+
+        LinearLayout summary = card();
+        summary.addView(sectionTitle("Presentation Summary"));
+        teacherMetricsValue = text("", 13, MUTED, false);
+        teacherMetricsValue.setLineSpacing(dp(3), 1f);
+        summary.addView(teacherMetricsValue);
+        content.addView(summary);
+
+        pageHost.addView(scroll);
     }
 
-    private void renderAiPanel() {
-        panelContent.addView(sectionTitle("AI Coach"));
-        panelContent.addView(buildPanelTabs());
+    private void renderCoachPage() {
+        ScrollView scroll = pageScroll();
+        LinearLayout content = pageContent(scroll);
+        content.addView(pageHeading("AI Coach", "Fast explanations without leaving the lab."));
 
         LinearLayout quick = card();
-        quick.addView(label("Ask fast"));
-        String[] prompts = {
-                "Explain my current circuit",
-                "Why is it not working?",
-                "Teach me voltage",
-                "Quiz me"
-        };
-        for (String prompt : prompts) {
-            quick.addView(button(prompt, SOFT_BLUE, PRIMARY, new PromptClick(prompt)));
-        }
-        panelContent.addView(quick);
+        quick.addView(sectionTitle("Quick Prompts"));
+        quick.addView(tileRow(
+                promptTile("Explain my circuit"),
+                promptTile("Why is it not working?")
+        ));
+        quick.addView(tileRow(
+                promptTile("Teach me voltage"),
+                promptTile("Quiz me")
+        ));
+        content.addView(quick);
 
         LinearLayout chat = card();
+        chat.addView(sectionTitle("Coach Chat"));
         chatLog = text(chatHistory.length() == 0
                 ? "Ask about voltage, resistors, short circuits, or the first exact fix."
-                : chatHistory.toString(), 14, TEXT, false);
-        chatLog.setLineSpacing(dp(3), 1.0f);
+                : chatHistory.toString(), 14, INK, false);
+        chatLog.setLineSpacing(dp(3), 1f);
         chat.addView(chatLog);
         chatInput = input("", "Ask your AI coach");
         chat.addView(chatInput);
-        chat.addView(button("Send", PRIMARY, Color.WHITE, new View.OnClickListener() {
+        chat.addView(fullAction("Send", PRIMARY, Color.WHITE, new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 sendChat();
             }
         }));
-        panelContent.addView(chat);
+        content.addView(chat);
+
+        pageHost.addView(scroll);
     }
 
-    private final class PromptClick implements View.OnClickListener {
-        private final String prompt;
-
-        PromptClick(String prompt) {
-            this.prompt = prompt;
+    private void attachBoard(FrameLayout parent) {
+        ViewGroup oldParent = (ViewGroup) boardView.getParent();
+        if (oldParent != null) {
+            oldParent.removeView(boardView);
         }
-
-        @Override
-        public void onClick(View view) {
-            askCoach(prompt);
-        }
+        parent.addView(boardView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
     }
 
-    private final class TemplateClick implements View.OnClickListener {
-        private final String template;
-        private final String name;
+    private TextView templateTile(final String title, String detail, final String template, int background, int foreground) {
+        TextView tile = tile(title + "\n" + detail, background, foreground);
+        tile.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                applyTemplate(template, title);
+            }
+        });
+        return tile;
+    }
 
-        TemplateClick(String template, String name) {
-            this.template = template;
-            this.name = name;
-        }
+    private TextView componentTile(final String type) {
+        TextView tile = tile(type + "\nAdd to board", Color.rgb(248, 250, 252), CircuitComponent.colorFor(type));
+        tile.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                boardView.addComponent(type);
+                latestResult = null;
+                refreshStats();
+                toast(type + " added");
+            }
+        });
+        return tile;
+    }
 
-        @Override
-        public void onClick(View view) {
-            applyTemplate(template, name);
-        }
+    private TextView promptTile(final String prompt) {
+        TextView tile = tile(prompt, SOFT_TEAL, PRIMARY);
+        tile.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                askCoach(prompt);
+            }
+        });
+        return tile;
+    }
+
+    private LinearLayout statTile(String label, String value, int accent) {
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setPadding(dp(12), dp(10), dp(12), dp(10));
+        tile.setBackground(rounded(Color.rgb(248, 250, 252), LINE, dp(8)));
+
+        TextView caption = text(label, 12, MUTED, true);
+        TextView statValue = text(value, 18, accent, true);
+        statValue.setTag("value");
+        statValue.setSingleLine(true);
+        statValue.setEllipsize(TextUtils.TruncateAt.END);
+        tile.addView(caption);
+        tile.addView(statValue);
+        return tile;
     }
 
     private void applyTemplate(String template, String name) {
         projectName = name;
         boardView.loadTemplate(template);
         latestResult = boardView.runSimulation();
-        renderPanel("student");
+        renderPage("studio");
         toast(name + " loaded");
+    }
+
+    private void renameProject() {
+        if (projectNameInput != null) {
+            projectName = projectNameInput.getText().toString().trim();
+        }
+        if (projectName.length() == 0) {
+            projectName = "Untitled Circuit";
+            if (projectNameInput != null) {
+                projectNameInput.setText(projectName);
+            }
+        }
+        refreshStats();
+        toast("Project renamed");
     }
 
     private void runLab() {
@@ -532,6 +607,7 @@ public final class MainActivity extends Activity {
 
         try {
             projectStore.save(projectName, boardView.snapshot(), teacherGrade, teacherFeedback);
+            refreshStats();
             toast("Project saved on this device");
         } catch (JSONException error) {
             toast("Save failed: " + error.getMessage());
@@ -551,7 +627,7 @@ public final class MainActivity extends Activity {
             teacherFeedback = project.teacherFeedback;
             boardView.loadSnapshot(project.snapshot);
             latestResult = boardView.runSimulation();
-            renderPanel(activePanel);
+            renderPage("studio");
             toast("Project loaded");
         } catch (JSONException error) {
             toast("Load failed: " + error.getMessage());
@@ -599,6 +675,15 @@ public final class MainActivity extends Activity {
     @SuppressLint("SetTextI18n")
     private void refreshStats() {
         CircuitEngine.SimulationResult result = currentResult();
+        if (headerProjectValue != null) {
+            headerProjectValue.setText(projectName);
+        }
+        if (headerStatusValue != null) {
+            headerStatusValue.setText(result.status);
+        }
+        if (headerScoreValue != null) {
+            headerScoreValue.setText(result.score + "/100");
+        }
         if (statusValue != null) {
             statusValue.setText(result.status);
         }
@@ -613,10 +698,10 @@ public final class MainActivity extends Activity {
             outputsValue.setText(outputsText(result));
         }
         if (coachValue != null) {
-            coachValue.setText(result.hint + "\n\nFix: " + result.fix);
+            coachValue.setText(result.hint + "\n\nNext move: " + result.fix);
         }
         if (countsValue != null) {
-            countsValue.setText(boardView.getComponentCount() + " components, " + boardView.getWireCount() + " wires");
+            countsValue.setText(boardView.getComponentCount() + " parts, " + boardView.getWireCount() + " wires");
         }
         if (voltageValue != null) {
             voltageValue.setText(String.format(Locale.US, "%.1fV", boardView.getBatteryVoltage()));
@@ -634,15 +719,15 @@ public final class MainActivity extends Activity {
 
     private String challengeText(CircuitEngine.SimulationResult result) {
         if ("Working Circuit".equals(result.status) && result.score >= 90) {
-            return "Advanced build complete. Add feedback and save the project.";
+            return "Advanced build complete. Open Review for final notes.";
         }
         if ("Working Circuit".equals(result.status)) {
             return "Working build. Add a sensor to push the score higher.";
         }
         if (result.overload) {
-            return "Safety check: fix the warning before submission.";
+            return "Safety check: fix the warning before presenting.";
         }
-        return "Goal: make a safe closed loop that powers one output.";
+        return "Make a safe closed loop that powers one output.";
     }
 
     private String outputsText(CircuitEngine.SimulationResult result) {
@@ -672,76 +757,128 @@ public final class MainActivity extends Activity {
                 + "Teacher feedback: " + feedback;
     }
 
-    private void addPaletteButton(LinearLayout row, final String type) {
-        Button item = button(type, Color.rgb(245, 247, 251), TEXT, new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                boardView.addComponent(type);
-                toast(type + " added");
-            }
-        });
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        params.setMargins(0, dp(6), dp(8), dp(2));
-        row.addView(item, params);
+    private ScrollView pageScroll() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.setBackgroundColor(BG);
+        return scroll;
     }
 
-    private LinearLayout buildPanelTabs() {
-        LinearLayout tabs = row();
-        tabs.setPadding(0, 0, 0, dp(8));
-        tabs.addView(tabButton("Student", "student"));
-        tabs.addView(tabButton("Teacher", "teacher"));
-        tabs.addView(tabButton("AI Coach", "ai"));
-        return tabs;
+    private LinearLayout pageContent(ScrollView scroll) {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(14), dp(14), dp(14), dp(18));
+        scroll.addView(content, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+        return content;
     }
 
-    private Button tabButton(String label, final String panel) {
-        boolean active = activePanel.equals(panel);
-        return button(
-                label,
-                active ? PRIMARY_DARK : SOFT_BLUE,
-                active ? Color.WHITE : PRIMARY,
-                new View.OnClickListener() {
-                    @Override
-                    public void onClick(View view) {
-                        renderPanel(panel);
-                    }
-                }
-        );
+    private LinearLayout pageHeading(String title, String subtitle) {
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.VERTICAL);
+        heading.setPadding(0, 0, 0, dp(12));
+        heading.addView(text(title, 22, INK, true));
+        TextView detail = text(subtitle, 13, MUTED, false);
+        detail.setLineSpacing(dp(2), 1f);
+        heading.addView(detail);
+        return heading;
     }
 
-    private LinearLayout row() {
+    private LinearLayout tileRow(View first, View second) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams firstParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        firstParams.setMargins(0, dp(8), dp(6), 0);
+        row.addView(first, firstParams);
+        LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        secondParams.setMargins(dp(6), dp(8), 0, 0);
+        row.addView(second, secondParams);
         return row;
     }
 
-    private TextView stat(LinearLayout parent, String label, String value) {
+    private View spacer() {
+        View spacer = new View(this);
+        spacer.setVisibility(View.INVISIBLE);
+        return spacer;
+    }
+
+    private LinearLayout actionRow() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(6), 0, dp(6));
+        row.setGravity(Gravity.CENTER);
+        row.setPadding(0, dp(4), 0, 0);
+        return row;
+    }
 
-        TextView left = text(label, 13, MUTED, false);
-        row.addView(left, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+    private TextView weightedAction(String value, int background, int foreground, View.OnClickListener listener) {
+        TextView button = action(value, background, foreground, listener);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(46), 1f);
+        params.setMargins(dp(4), 0, dp(4), 0);
+        button.setLayoutParams(params);
+        return button;
+    }
 
-        TextView right = text(value, 14, TEXT, true);
-        right.setGravity(Gravity.END);
-        row.addView(right, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f));
+    private TextView fullAction(String value, int background, int foreground, View.OnClickListener listener) {
+        TextView button = action(value, background, foreground, listener);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(46)
+        );
+        params.setMargins(0, dp(4), 0, 0);
+        button.setLayoutParams(params);
+        return button;
+    }
 
-        parent.addView(row);
-        return right;
+    private TextView action(String value, int background, int foreground, final View.OnClickListener listener) {
+        TextView button = text(value, 13, foreground, true);
+        button.setGravity(Gravity.CENTER);
+        button.setMinHeight(dp(42));
+        button.setPadding(dp(12), 0, dp(12), 0);
+        button.setBackground(rounded(background, Color.TRANSPARENT, dp(8)));
+        button.setClickable(true);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(final View view) {
+                view.animate()
+                        .scaleX(0.98f)
+                        .scaleY(0.98f)
+                        .setDuration(55)
+                        .withEndAction(new Runnable() {
+                            @Override
+                            public void run() {
+                                view.animate().scaleX(1f).scaleY(1f).setDuration(75).start();
+                                listener.onClick(view);
+                            }
+                        })
+                        .start();
+            }
+        });
+        return button;
+    }
+
+    private TextView tile(String value, int background, int foreground) {
+        TextView tile = text(value, 13, foreground, true);
+        tile.setGravity(Gravity.CENTER);
+        tile.setMinHeight(dp(64));
+        tile.setPadding(dp(10), dp(8), dp(10), dp(8));
+        tile.setLineSpacing(dp(2), 1f);
+        tile.setBackground(rounded(background, LINE, dp(8)));
+        tile.setClickable(true);
+        return tile;
     }
 
     private TextView sectionTitle(String value) {
-        TextView title = text(value, 18, TEXT, true);
+        TextView title = text(value, 17, INK, true);
         title.setPadding(0, 0, 0, dp(8));
         return title;
     }
 
     private TextView label(String value) {
-        TextView label = text(value, 13, MUTED, true);
-        label.setPadding(0, 0, 0, dp(6));
+        TextView label = text(value, 12, MUTED, true);
+        label.setPadding(0, 0, 0, dp(5));
         return label;
     }
 
@@ -753,16 +890,24 @@ public final class MainActivity extends Activity {
         return pill;
     }
 
-    private TextView metricChip(String label, String value, int background, int foreground) {
-        TextView chip = text(label + "\n" + value, 12, foreground, true);
-        chip.setGravity(Gravity.CENTER);
-        chip.setMinHeight(dp(42));
-        chip.setPadding(dp(10), dp(4), dp(10), dp(4));
-        chip.setBackground(rounded(background, Color.TRANSPARENT, dp(8)));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+    private TextView headerMetric(LinearLayout parent, String label, String value, float weight) {
+        LinearLayout chip = new LinearLayout(this);
+        chip.setOrientation(LinearLayout.VERTICAL);
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setPadding(dp(10), dp(7), dp(10), dp(7));
+        chip.setBackground(rounded(Color.argb(48, 255, 255, 255), Color.argb(68, 255, 255, 255), dp(8)));
+
+        TextView caption = text(label, 10, Color.rgb(196, 207, 218), true);
+        TextView main = text(value, 12, Color.WHITE, true);
+        main.setSingleLine(true);
+        main.setEllipsize(TextUtils.TruncateAt.END);
+        chip.addView(caption);
+        chip.addView(main);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, weight);
         params.setMargins(0, 0, dp(8), 0);
-        chip.setLayoutParams(params);
-        return chip;
+        parent.addView(chip, params);
+        return main;
     }
 
     private TextView text(String value, int size, int color, boolean bold) {
@@ -783,11 +928,11 @@ public final class MainActivity extends Activity {
         input.setHint(hint);
         input.setTextSize(14);
         input.setSingleLine(false);
-        input.setMinHeight(dp(46));
+        input.setMinHeight(dp(48));
         input.setPadding(dp(12), dp(8), dp(12), dp(8));
-        input.setTextColor(TEXT);
+        input.setTextColor(INK);
         input.setHintTextColor(MUTED);
-        input.setBackground(rounded(Color.rgb(245, 247, 251), LINE, dp(8)));
+        input.setBackground(rounded(Color.rgb(248, 250, 252), LINE, dp(8)));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -812,54 +957,54 @@ public final class MainActivity extends Activity {
         return card;
     }
 
-    private Button button(String value, int background, int foreground, View.OnClickListener listener) {
-        Button button = new Button(this);
-        button.setText(value);
-        button.setAllCaps(false);
-        button.setTextSize(13);
-        button.setTextColor(foreground);
-        button.setGravity(Gravity.CENTER);
-        button.setMinHeight(dp(38));
-        button.setPadding(dp(12), 0, dp(12), 0);
-        button.setBackground(rounded(background, Color.TRANSPARENT, dp(8)));
-        button.setElevation(dp(2));
-        button.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(final View view) {
-                view.animate()
-                        .scaleX(0.97f)
-                        .scaleY(0.97f)
-                        .setDuration(55)
-                        .withEndAction(new Runnable() {
-                            @Override
-                            public void run() {
-                                view.animate().scaleX(1f).scaleY(1f).setDuration(75).start();
-                                listener.onClick(view);
-                            }
-                        })
-                        .start();
-            }
-        });
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        params.setMargins(0, 0, dp(8), dp(8));
-        button.setLayoutParams(params);
-        return button;
+    private void updateNavBar() {
+        navBar.removeAllViews();
+        navBar.addView(navItem("Studio", "studio"));
+        navBar.addView(navItem("Build", "build"));
+        navBar.addView(navItem("Review", "review"));
+        navBar.addView(navItem("Coach", "coach"));
     }
 
-    private Drawable premiumPanelBackground() {
+    private TextView navItem(String label, final String page) {
+        boolean active = activePage.equals(page);
+        TextView item = text(label, 13, active ? Color.WHITE : MUTED, true);
+        item.setGravity(Gravity.CENTER);
+        item.setPadding(dp(8), dp(10), dp(8), dp(10));
+        item.setBackground(rounded(active ? GRAPHITE : Color.TRANSPARENT, Color.TRANSPARENT, dp(8)));
+        item.setClickable(true);
+        item.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                renderPage(page);
+            }
+        });
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        params.setMargins(dp(3), 0, dp(3), 0);
+        item.setLayoutParams(params);
+        return item;
+    }
+
+    private Drawable headerBackground() {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[] {
-                        Color.rgb(255, 255, 255),
-                        Color.rgb(244, 250, 255),
-                        Color.rgb(239, 253, 246)
-                }
+                new int[] { GRAPHITE, GRAPHITE_2, Color.rgb(21, 69, 62) }
         );
-        drawable.setStroke(dp(1), Color.rgb(228, 235, 245));
+        drawable.setCornerRadius(0);
+        return drawable;
+    }
+
+    private Drawable navBackground() {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(Color.WHITE);
+        drawable.setStroke(dp(1), LINE);
+        return drawable;
+    }
+
+    private Drawable boardShellBackground() {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(Color.WHITE);
+        drawable.setStroke(dp(1), Color.rgb(208, 218, 229));
+        drawable.setCornerRadius(dp(8));
         return drawable;
     }
 
@@ -873,7 +1018,7 @@ public final class MainActivity extends Activity {
         return drawable;
     }
 
-    private void clearPanelRefs() {
+    private void clearPageRefs() {
         statusValue = null;
         scoreValue = null;
         gradeValue = null;
